@@ -188,6 +188,8 @@ public partial class FCExporter : System.Web.UI.Page
     /// </summary>
     private MemoryStream svgStream;
 
+    private Hashtable exportData;
+
     /// <summary>
     /// The main function that handles all Input - Process - Output of this Export Architecture
     /// </summary>
@@ -200,7 +202,7 @@ public partial class FCExporter : System.Web.UI.Page
          * Retrieve export data from POST Request sent by chart
          * Parse the Request stream into export data readable by this script
          */
-        Hashtable exportData = parseExportRequestStream();
+        exportData = parseExportRequestStream();
 
         // process export data and get the processed data (image/PDF) to be exported
         MemoryStream exportObject = null;
@@ -209,21 +211,21 @@ public partial class FCExporter : System.Web.UI.Page
         {
             if (exportData["encodedImgData"] != null && exportData["encodedImgData"].ToString() != "" && ((Hashtable)exportData["parameters"])["exportformat"].ToString() == "svg")
             {
-                exportObject = exportProcessor(((Hashtable)exportData["parameters"])["exportformat"].ToString(), "svg", (Hashtable)exportData["parameters"], exportData["encodedImgData"].ToString());
+                exportObject = exportProcessor(((Hashtable)exportData["parameters"])["exportformat"].ToString(), exportData["svg"].ToString(), (Hashtable)exportData["parameters"], exportData["encodedImgData"].ToString());
             }
             else
             {
                 exportObject = exportProcessor(((Hashtable)exportData["parameters"])["exportformat"].ToString(), "svg", (Hashtable)exportData["parameters"]);
             }
-            
+
         }
         else
         {
-            if(isImgData) 
+            if (isImgData)
             {
                 convertRawImageDataToFile(exportData);
-            } 
-            else 
+            }
+            else
             {
                 if (exportData["encodedImgData"] != null && exportData["encodedImgData"].ToString() != "" && ((Hashtable)exportData["parameters"])["exportformat"].ToString() == "svg")
                 {
@@ -278,7 +280,7 @@ public partial class FCExporter : System.Web.UI.Page
         {
             IsSVGData = true;
             exportData["svg"] = Request["stream"];
-            
+
             // Added custom parameter
             exportData["exporttargetwindow"] = "_self";
 
@@ -292,7 +294,7 @@ public partial class FCExporter : System.Web.UI.Page
             // need to look for a more proper method which covers all such situations
             svgStr = svgStr.Replace("&nbsp;", " ");
             exportData["svg"] = svgStr;
-            if (Request["encodedImgData"]!=null) 
+            if (Request["encodedImgData"] != null)
             {
                 exportData["encodedImgData"] = Request["encodedImgData"];
             }
@@ -301,18 +303,20 @@ public partial class FCExporter : System.Web.UI.Page
             svgData = new StreamReader(svgStream);
         }
         // If Flash Charts
-        else 
+        else
         {
-            if(Request["stream_type"] == "image-data") {
+            if (Request["stream_type"] == "image-data")
+            {
                 isImgData = true;
                 if (Request["stream"] == null || Request["stream"].Trim() == "") raise_error("100", true);
-                exportData ["stream"] =  Request["stream"].Trim().Replace(" ", "+");
-                exportData ["stream"] = exportData ["stream"].ToString().Substring(exportData ["stream"].ToString().IndexOf(",")+1);
-                String []parametersArray = Request["parameters"].ToString().Split('|');
+                exportData["stream"] = Request["stream"].Trim().Replace(" ", "+");
+                exportData["stream"] = exportData["stream"].ToString().Substring(exportData["stream"].ToString().IndexOf(",") + 1);
+                String[] parametersArray = Request["parameters"].ToString().Split('|');
                 exportData["exportfilename"] = parametersArray[0].Split('=')[1];
                 exportData["exportformat"] = parametersArray[1].Split('=')[1].ToLower();
             }
-            else {
+            else
+            {
                 isImgData = false;
                 //String of compressed image data
                 exportData["stream"] = Request["stream"];
@@ -345,7 +349,7 @@ public partial class FCExporter : System.Web.UI.Page
             // Send notice if BgColor is not provided
             raise_error(" Background color not specified. Taking White (FFFFFF) as default background color.");
             // Set White as Default Background color            
-            meta["bgcolor"] = "FFFFFF";           
+            meta["bgcolor"] = "FFFFFF";
         }
 
         // DOMId of the chart
@@ -372,11 +376,11 @@ public partial class FCExporter : System.Web.UI.Page
         fileName = Server.MapPath(".") + "\\temp\\" + exportData["exportfilename"].ToString() + "." + exportData["exportformat"].ToString().ToLower();
         System.IO.File.WriteAllBytes(fileName, base64Decode(exportData["stream"].ToString()));
         byte[] data = System.IO.File.ReadAllBytes(fileName);
-        
+
         string mime = getMime(exportData["exportformat"].ToString());
         Response.ContentType = mime;
         Response.AddHeader("Content-Disposition", "attachment" + "; filename=\"" + fileName + "." + exportData["exportformat"].ToString().ToLower() + "\"");
-        
+
         Hashtable retStatus = new Hashtable();
         retStatus["filepath"] = "";
 
@@ -388,7 +392,7 @@ public partial class FCExporter : System.Web.UI.Page
         outStream.Close();
 
         Response.End();
-    }   
+    }
     /// <summary>
     /// Parse export 'parameters' string into a Hashtable 
     /// Also synchronise default values from defaultparameterValues Hashtable
@@ -445,25 +449,43 @@ public partial class FCExporter : System.Web.UI.Page
         };
         return data;
     }
-    private MemoryStream stichImageToSVG(string svgData, string imageData)
+    private string stichImageToSVG(string svgData, string imageData)
     {
         JavaScriptSerializer ser = new JavaScriptSerializer();
         var data = ser.Deserialize<Dictionary<string, Dictionary<string, string>>>(imageData);
-        
+
         List<string> rawImageDataArray = new List<string>();
         List<string> hrefArray = new List<string>();
         
-        foreach (Match match in Regex.Matches(svgData, "/(<image[^>]*xlink:href *= *[\"']?)([^\"']*)/i")) 
-        { 
-            hrefArray.Add(match.Value);
-            string[] imageNameArray = match.Value.Split('/');
+        // /(<image[^>]*xlink:href *= *[\"']?)([^\"']*)/i
+        Regex regex = new Regex("<image.+?xlink:href=\"(.+?)\".+?/?>");
+        int counter = 0;
+        foreach (Match match in regex.Matches(svgData))
+        {
+            string[] temp1 = match.Value.Split(new string[] { "xlink:href=" }, StringSplitOptions.None);
+            hrefArray.Add(temp1[1].Split('"')[1]);
+            string[] imageNameArray = hrefArray[counter].Split('/');
             rawImageDataArray.Add(getImageData(data, imageNameArray[imageNameArray.Length - 1]));
+            counter+=1;
         }
-        for (var index = 0; index < rawImageDataArray.Count; index++)
+        for (int index = 0; index < rawImageDataArray.Count; index++)
         {
             svgData = svgData.Replace(hrefArray[index], rawImageDataArray[index]);
         }
+    
+        return svgData;
+    }
+
+    private string stichImageToSVGAndGetString(string svgData, string imageData)
+    {
         
+        return stichImageToSVG(svgData, imageData);
+    }
+
+    private MemoryStream stichImageToSVGAndGetStream(string svgData, string imageData)
+    {
+
+        svgData = stichImageToSVG(svgData, imageData);
         byte[] svg = System.Text.Encoding.UTF8.GetBytes(svgData.ToString());
         return new MemoryStream(svg);
     }
@@ -475,14 +497,18 @@ public partial class FCExporter : System.Web.UI.Page
     /// <param name="meta">{Hastable)Image meta data in keys "width", "heigth" and "bgColor"</param>
     /// <param name="meta">{string)Image data</param>
     /// <returns></returns>
-    
-    private MemoryStream exportProcessor(string strFormat, string stream, Hashtable meta, string imageData) 
+
+    private MemoryStream exportProcessor(string strFormat, string stream, Hashtable meta, string imageData)
     {
-        return stichImageToSVG(strFormat, imageData);
+        return stichImageToSVGAndGetStream(stream, imageData);
     }
     private MemoryStream exportProcessor(string strFormat, string stream, Hashtable meta)
     {
-
+        if (exportData["encodedImgData"] != null && exportData["encodedImgData"].ToString() != "")
+        {
+            svgStream = stichImageToSVGAndGetStream(exportData["svg"].ToString(), exportData["encodedImgData"].ToString());
+            svgData = new StringReader(stichImageToSVGAndGetString(exportData["svg"].ToString(), exportData["encodedImgData"].ToString()));
+        }
         strFormat = strFormat.ToLower();
         // initilize memeory stream object to store output bytes
         MemoryStream exportObjectStream = new MemoryStream();
@@ -634,7 +660,7 @@ public partial class FCExporter : System.Web.UI.Page
                 status = false;
             }
 
-            
+
             if (isDownload)
             {
                 // If 'download'- terminate imediately
@@ -702,8 +728,8 @@ public partial class FCExporter : System.Web.UI.Page
         if (notices.Trim() != "") arrStatus.Add("notice=" + notices.Trim());
 
         // DOMId of the chart
-        arrStatus.Add("DOMId=" + (meta["DOMId"]==null? DOMId : meta["DOMId"].ToString()));
-        
+        arrStatus.Add("DOMId=" + (meta["DOMId"] == null ? DOMId : meta["DOMId"].ToString()));
+
         // add width and height
         // provide 0 as width and height on failure	
         if (meta["width"] == null) meta["width"] = "0";
@@ -763,7 +789,7 @@ public partial class FCExporter : System.Web.UI.Page
         string ext = getExtension(exportParams["exportformat"].ToString());
 
         Hashtable retServerStatus = new Hashtable();
-        
+
         //set server status to true by default
         retServerStatus["ready"] = true;
 
@@ -890,7 +916,7 @@ public partial class FCExporter : System.Web.UI.Page
     /// <returns>Hashtable containing various export settings</returns>
     private Hashtable setupDownload(Hashtable exportParams)
     {
-        
+
         //get export filename
         string exportFile = exportParams["exportfilename"].ToString();
         //get extension
@@ -1073,33 +1099,33 @@ public class FCIMGGenerator
     private ArrayList arrExportData = new ArrayList();
     //stores number of pages = length of $arrExportData array
     private int numPages = 0;
-	
 
-	/// <summary>
-	/// Generates bitmap data for the image from a FusionCharts export format
-	/// the height and width of the original export needs to be specified
-	/// the default background color can also be specified
-	/// </summary>
+
+    /// <summary>
+    /// Generates bitmap data for the image from a FusionCharts export format
+    /// the height and width of the original export needs to be specified
+    /// the default background color can also be specified
+    /// </summary>
     public FCIMGGenerator(string imageData_FCFormat, string width, string height, string bgcolor)
     {
         setBitmapData(imageData_FCFormat, width, height, bgcolor);
     }
-	
-	/// <summary>
-	/// Gets the binary data stream of the image
-	/// The passed parameter determines the file format of the image
-	/// to be exported
-	/// </summary>
+
+    /// <summary>
+    /// Gets the binary data stream of the image
+    /// The passed parameter determines the file format of the image
+    /// to be exported
+    /// </summary>
     public MemoryStream getBinaryStream(string strFormat)
     {
-		
-		// the image object 
+
+        // the image object 
         Bitmap exportObj = getImageObject();
-		
-		// initiates a new binary data sream
+
+        // initiates a new binary data sream
         MemoryStream outStream = new MemoryStream();
-		
-		// determines the image format
+
+        // determines the image format
         switch (strFormat)
         {
             case "jpg":
@@ -1110,7 +1136,7 @@ public class FCIMGGenerator
                 exportObj.Save(outStream, ImageFormat.Png);
                 break;
             case "gif":
-                exportObj.Save(outStream,ImageFormat.Gif);
+                exportObj.Save(outStream, ImageFormat.Gif);
                 break;
             case "tiff":
                 exportObj.Save(outStream, ImageFormat.Tiff);
@@ -1124,13 +1150,13 @@ public class FCIMGGenerator
         return outStream;
 
     }
-	
-	
-	/// <summary>
-	/// Generates bitmap data for the image from a FusionCharts export format
-	/// the height and width of the original export needs to be specified
-	/// the default background color can also be specified
-	/// </summary>
+
+
+    /// <summary>
+    /// Generates bitmap data for the image from a FusionCharts export format
+    /// the height and width of the original export needs to be specified
+    /// the default background color can also be specified
+    /// </summary>
     private void setBitmapData(string imageData_FCFormat, string width, string height, string bgcolor)
     {
         Hashtable chartExportData = new Hashtable();
@@ -1141,12 +1167,12 @@ public class FCIMGGenerator
         arrExportData.Add(chartExportData);
         numPages++;
     }
-	
-	/// <summary>
-	/// Generates bitmap data for the image from a FusionCharts export format
-	/// the height and width of the original export needs to be specified
-	/// the default background color should also be specified
-	/// </summary>
+
+    /// <summary>
+    /// Generates bitmap data for the image from a FusionCharts export format
+    /// the height and width of the original export needs to be specified
+    /// the default background color should also be specified
+    /// </summary>
     private Bitmap getImageObject(int id)
     {
         Hashtable rawImageData = (Hashtable)arrExportData[id];
@@ -1207,9 +1233,9 @@ public class FCIMGGenerator
     }
 
     /// <summary>
-	/// Retreives the bitmap image object
-	/// </summary>
-	private Bitmap getImageObject()
+    /// Retreives the bitmap image object
+    /// </summary>
+    private Bitmap getImageObject()
     {
         return getImageObject(0);
     }
@@ -1460,23 +1486,23 @@ public class FCPDFGenerator
     private ArrayList arrExportData = new ArrayList();
     //stores number of pages = length of $arrExportData array
     private int numPages = 0;
-	
-	/// <summary>
-	/// Generates a PDF file with the given parameters
-	/// The imageData_FCFormat parameter is the FusionCharts export format data
-	/// width, height are the respective width and height of the original image
-	/// bgcolor determines the default background colour
-	/// </summary>
+
+    /// <summary>
+    /// Generates a PDF file with the given parameters
+    /// The imageData_FCFormat parameter is the FusionCharts export format data
+    /// width, height are the respective width and height of the original image
+    /// bgcolor determines the default background colour
+    /// </summary>
     public FCPDFGenerator(string imageData_FCFormat, string width, string height, string bgcolor)
     {
         setBitmapData(imageData_FCFormat, width, height, bgcolor);
     }
-	
-	/// <summary>
-	/// Gets the binary data stream of the image
-	/// The passed parameter determines the file format of the image
-	/// to be exported
-	/// </summary>
+
+    /// <summary>
+    /// Gets the binary data stream of the image
+    /// The passed parameter determines the file format of the image
+    /// to be exported
+    /// </summary>
     public MemoryStream getBinaryStream(string strFormat)
     {
         byte[] exportObj = getPDFObjects(true);
@@ -1489,11 +1515,11 @@ public class FCPDFGenerator
 
     }
 
-	/// <summary>
-	/// Generates bitmap data for the image from a FusionCharts export format
-	/// the height and width of the original export needs to be specified
-	/// the default background color should also be specified
-	/// </summary>
+    /// <summary>
+    /// Generates bitmap data for the image from a FusionCharts export format
+    /// the height and width of the original export needs to be specified
+    /// the default background color should also be specified
+    /// </summary>
     private void setBitmapData(string imageData_FCFormat, string width, string height, string bgcolor)
     {
         Hashtable chartExportData = new Hashtable();
@@ -1731,8 +1757,8 @@ public class FCPDFGenerator
             return imageData24.ToArray();
         }
     }
-	
-	// converts a hexadecimal colour string to it's respective byte value
+
+    // converts a hexadecimal colour string to it's respective byte value
     private byte[] hexToBytes(string strHex)
     {
         if (strHex == null || strHex.Trim().Length == 0) strHex = "00";
@@ -1867,14 +1893,14 @@ public class PDFCompress
             if (preByte == postByte)
             {
                 // but flush the non repeatable data (if present) to compressed stream 
-                if (NoRepeat.Length > 0) WriteNoRepeater(NoRepeat); 
+                if (NoRepeat.Length > 0) WriteNoRepeater(NoRepeat);
 
                 // increase repeat count
                 _RL++;
-                
+
                 // if repeat count reaches limit of repeat i.e. 128 
                 // write the repeat data and reset the repeat counter
-                if (_RL > 128) _RL = WriteRunLength(_RL-1,preByte); 
+                if (_RL > 128) _RL = WriteRunLength(_RL - 1, preByte);
 
             }
             else
@@ -1885,21 +1911,21 @@ public class PDFCompress
                 if (_RL == 1) NoRepeat.WriteByte(preByte);
 
                 // write repeated length and byte (if present ) to output stream
-                if (_RL > 1)  _RL = WriteRunLength(_RL, preByte);
-                
+                if (_RL > 1) _RL = WriteRunLength(_RL, preByte);
+
                 // write non repeatable data to out put stream if the length reaches limit
-                if (NoRepeat.Length == 128) WriteNoRepeater(NoRepeat); 
+                if (NoRepeat.Length == 128) WriteNoRepeater(NoRepeat);
             }
         }
-  
+
         // at the end of iteration 
         // take care of the last byte
 
         // if repeated 
-        if (_RL > 1) 
+        if (_RL > 1)
         {
             // write run length and byte (if present ) to output stream
-            _RL = WriteRunLength(_RL, preByte); 
+            _RL = WriteRunLength(_RL, preByte);
         }
         else
         {
@@ -1909,7 +1935,7 @@ public class PDFCompress
             WriteNoRepeater(NoRepeat);
         }
 
-        
+
         // wrote EOD
         _Compressed.WriteByte((byte)128);
 
