@@ -176,7 +176,7 @@ public partial class FCExporter : System.Web.UI.Page
 
     public bool IsSVGData { get; set; }
 
-    public bool isImgData { get; set; }
+    public bool IsImgData { get; set; }
 
     /// <summary>
     /// Stores SVG information.
@@ -221,7 +221,8 @@ public partial class FCExporter : System.Web.UI.Page
         }
         else
         {
-            if (isImgData)
+            // if image data is provided instead of svg directly moving to create file
+            if (IsImgData)
             {
                 convertRawImageDataToFile(exportData);
             }
@@ -307,7 +308,7 @@ public partial class FCExporter : System.Web.UI.Page
         {
             if (Request["stream_type"] == "image-data")
             {
-                isImgData = true;
+                IsImgData = true;
                 if (Request["stream"] == null || Request["stream"].Trim() == "") raise_error("100", true);
                 exportData["stream"] = Request["stream"].Trim().Replace(" ", "+");
                 exportData["stream"] = exportData["stream"].ToString().Substring(exportData["stream"].ToString().IndexOf(",") + 1);
@@ -317,7 +318,7 @@ public partial class FCExporter : System.Web.UI.Page
             }
             else
             {
-                isImgData = false;
+                IsImgData = false;
                 //String of compressed image data
                 exportData["stream"] = Request["stream"];
 
@@ -449,6 +450,13 @@ public partial class FCExporter : System.Web.UI.Page
         };
         return data;
     }
+
+    /// <summary>
+    /// Replace the image href with image data
+    /// </summary>
+    /// <param name="svgData">(string) the stream data in SVG format</param>
+    /// <param name="meta">{string)Image data</param>
+    /// <returns></returns>
     private string stichImageToSVG(string svgData, string imageData)
     {
         JavaScriptSerializer ser = new JavaScriptSerializer();
@@ -457,7 +465,6 @@ public partial class FCExporter : System.Web.UI.Page
         List<string> rawImageDataArray = new List<string>();
         List<string> hrefArray = new List<string>();
         
-        // /(<image[^>]*xlink:href *= *[\"']?)([^\"']*)/i
         Regex regex = new Regex("<image.+?xlink:href=\"(.+?)\".+?/?>");
         int counter = 0;
         foreach (Match match in regex.Matches(svgData))
@@ -489,6 +496,7 @@ public partial class FCExporter : System.Web.UI.Page
         byte[] svg = System.Text.Encoding.UTF8.GetBytes(svgData.ToString());
         return new MemoryStream(svg);
     }
+
     /// <summary>
     /// Get Export data from and build the export binary/objct.
     /// </summary>
@@ -497,11 +505,18 @@ public partial class FCExporter : System.Web.UI.Page
     /// <param name="meta">{Hastable)Image meta data in keys "width", "heigth" and "bgColor"</param>
     /// <param name="meta">{string)Image data</param>
     /// <returns></returns>
-
     private MemoryStream exportProcessor(string strFormat, string stream, Hashtable meta, string imageData)
     {
         return stichImageToSVGAndGetStream(stream, imageData);
     }
+
+    /// <summary>
+   /// Get Export data from and build the export binary/objct.
+   /// </summary>
+   /// <param name="strFormat">(string) Export format</param>
+   /// <param name="stream">(string) Export image data in FusionCharts compressed format</param>
+   /// <param name="meta">{Hastable)Image meta data in keys "width", "heigth" and "bgColor"</param>
+   /// <returns></returns>
     private MemoryStream exportProcessor(string strFormat, string stream, Hashtable meta)
     {
         if (exportData["encodedImgData"] != null && exportData["encodedImgData"].ToString() != "")
